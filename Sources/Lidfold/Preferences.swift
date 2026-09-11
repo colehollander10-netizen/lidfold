@@ -8,10 +8,11 @@ enum Effect {
     static let activationAngle = 100.0
     /// At this lid angle the picture has fully dissolved into black.
     static let endAngle = 8.0
+    /// false: the desktop recedes away from the viewer behind the hinge, the
+    /// whole picture staying visible as it tilts back (the default).
     /// true: the desktop stays anchored in space and the glass sweeps over it,
-    /// stretching the picture toward the far edge (the iPhone Duo look).
-    /// false: the desktop recedes away from the viewer behind the hinge.
-    static let anchored = true
+    /// stretching the picture toward the far edge.
+    static let anchored = false
     /// Where the viewer sits, in screen heights: in front of the open screen
     /// and level with a point just above its top edge, as at a desk.
     static let eyeDistance = 2.8

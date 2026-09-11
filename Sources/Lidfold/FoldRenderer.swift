@@ -27,7 +27,9 @@ enum FoldModel {
         let travel = max(0, a0 - angle)
         let progress = min(max(travel / max(a0 - a1, 1), 0), 1)
         var f = FoldParams()
-        f.tilt = min(travel, 85) * .pi / 180
+        // The receding picture follows a share of the hinge rotation; the
+        // anchored glass follows it exactly.
+        f.tilt = min(travel * (Effect.anchored ? 1.0 : 0.74), 85) * .pi / 180
         f.eyeDistance = Effect.eyeDistance
         f.eyeHeight = Effect.eyeHeight
         f.blurStrength = Effect.blur * pow(progress, 1.35)
