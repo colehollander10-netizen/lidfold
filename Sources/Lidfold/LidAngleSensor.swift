@@ -26,8 +26,19 @@ final class LidAngleSensor {
 
     init() { open() }
 
-    deinit {
+    deinit { close() }
+
+    /// Drops the HID handle and opens it again, for after sleep.
+    func reopen() {
+        close()
+        open()
+    }
+
+    private func close() {
         if let manager { IOHIDManagerClose(manager, IOOptionBits(kIOHIDOptionsTypeNone)) }
+        manager = nil
+        device = nil
+        resolution = nil
     }
 
     /// Current lid angle in degrees, or nil if the read failed.

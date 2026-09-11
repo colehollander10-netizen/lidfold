@@ -17,11 +17,15 @@ final class OverlayWindowController: NSObject, MTKViewDelegate {
     private var view: MTKView?
     private var lastDraw: CFTimeInterval = 0
     private(set) var hasContent = false
+    private var reconfigurationCallbackInstalled = false
 
     /// Called once per frame with the elapsed time; returns what to draw.
     var paramsProvider: ((CFTimeInterval) -> FoldParams)?
-    /// Called once per frame; a non-nil texture replaces the picture.
-    var frameProvider: (() -> MTLTexture?)?
+    /// Called once per frame; a non-nil frame replaces the picture.
+    var frameProvider: (() -> CapturedFrame?)?
+    /// Set by the monitor. The window becomes visible only after a frame with
+    /// content has been presented, so there is never a black flash.
+    var wantsVisible = false
 
     var isVisible: Bool { window?.isVisible == true && (window?.alphaValue ?? 0) > 0 }
 
@@ -44,14 +48,11 @@ final class OverlayWindowController: NSObject, MTKViewDelegate {
         view.isPaused = false
     }
 
-    func reveal() {
-        guard let window else { return }
-        Log.write("overlay revealed on \(window.screen?.localizedName ?? "?")")
-        window.alphaValue = 1
-        window.orderFrontRegardless()
-    }
+    /// The screen the window is currently on, if it is ordered in.
+    var currentScreen: NSScreen? { window?.isVisible == true ? window?.screen : nil }
 
     func hide() {
+        wantsVisible = false
         guard let window else { return }
         if window.isVisible { Log.write("overlay hidden") }
         window.alphaValue = 0
@@ -88,6 +89,26 @@ final class OverlayWindowController: NSObject, MTKViewDelegate {
         w.contentView = v
         window = w
         view = v
+        installReconfigurationCallback()
+    }
+
+    /// Hides the window the moment a display change begins. With a monitor
+    /// attached, shutting the lid removes the built-in display and macOS
+    /// would otherwise move this window onto the monitor before any
+    /// notification arrives.
+    private func installReconfigurationCallback() {
+        guard !reconfigurationCallbackInstalled else { return }
+        reconfigurationCallbackInstalled = true
+        let userInfo = Unmanaged.passUnretained(self).toOpaque()
+        CGDisplayRegisterReconfigurationCallback({ display, flags, userInfo in
+            guard let userInfo, flags.contains(.beginConfigurationFlag) else { return }
+            let controller = Unmanaged<OverlayWindowController>.fromOpaque(userInfo).takeUnretainedValue()
+            DispatchQueue.main.async {
+                guard controller.window?.isVisible == true else { return }
+                Log.write("display \(display) reconfiguring, hiding overlay")
+                controller.hide()
+            }
+        }, userInfo)
     }
 
     func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {}
@@ -98,12 +119,18 @@ final class OverlayWindowController: NSObject, MTKViewDelegate {
         lastDraw = now
         guard let params = paramsProvider?(dt), let commandBuffer = renderer.commandQueue.makeCommandBuffer() else { return }
         if let fresh = frameProvider?() {
-            renderer.updateContent(from: fresh, commandBuffer: commandBuffer)
+            renderer.updateContent(from: fresh.texture, commandBuffer: commandBuffer)
+            commandBuffer.addCompletedHandler { _ in _ = fresh }   // keep the IOSurface alive through the blit
             hasContent = true
         }
         guard hasContent, let drawable = view.currentDrawable else { commandBuffer.commit(); return }
         renderer.encode(params: params, into: commandBuffer, target: drawable.texture)
         commandBuffer.present(drawable)
         commandBuffer.commit()
+        if wantsVisible, let window, window.alphaValue < 1 {
+            Log.write("overlay revealed on \(window.screen?.localizedName ?? "?")")
+            window.alphaValue = 1
+            window.orderFrontRegardless()
+        }
     }
 }

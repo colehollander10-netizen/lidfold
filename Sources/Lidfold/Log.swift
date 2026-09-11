@@ -10,8 +10,10 @@ enum Log {
 
     static func write(_ message: String) {
         NSLog("Lidfold: %@", message)
-        let line = "\(stamp.string(from: Date())) \(message)\n"
+        let now = Date()
         queue.async {
+            // DateFormatter is not thread-safe; it only runs on this queue.
+            let line = "\(stamp.string(from: now)) \(message)\n"
             guard let data = line.data(using: .utf8) else { return }
             if let handle = try? FileHandle(forWritingTo: url) {
                 defer { try? handle.close() }

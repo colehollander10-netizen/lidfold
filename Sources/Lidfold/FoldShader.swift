@@ -4,10 +4,11 @@ import Foundation
 /// toolchain is needed to build.
 ///
 /// Model: the desktop is a plane fixed in space at the position it had when
-/// the lid was open. The lid rotates about the hinge (bottom edge); each
-/// screen pixel looks through the tilted glass at that fixed plane, so the
-/// picture recedes with true perspective, pinned at the hinge. Distance from
-/// the eye then drives depth-of-field blur and a gradient of shadow that
+/// the lid was open. The glass rotates about the hinge (bottom edge) toward
+/// the viewer; each glass pixel shows what the viewer's ray through it hits on
+/// the fixed desktop, so the picture stays anchored from the viewer's seat
+/// while the glass sweeps over it, stretching toward the far edge. Height
+/// above the hinge then drives progressive blur and a gradient of shadow that
 /// dissolves the far edge into black as the lid shuts.
 enum FoldShader {
     static let source = #"""
@@ -53,11 +54,15 @@ enum FoldShader {
             float r = sqrt((fi + 0.5) / float(N));
             float a = fi * GOLDEN + rot;
             float2 off = float2(cos(a), sin(a)) * (r * radiusTexels) * texelSize;
+            float2 suv = uv + off;
+            // Taps past the picture edge would repeat the border texel and
+            // smear it into the black surround; leave them out instead.
+            if (suv.x < 0.0 || suv.x > 1.0 || suv.y < 0.0 || suv.y > 1.0) { continue; }
             float w = exp(-2.0 * r * r);
-            acc += tex.sample(s, uv + off, level(lod)).rgb * w;
+            acc += tex.sample(s, suv, level(lod)).rgb * w;
             wsum += w;
         }
-        return acc / wsum;
+        return wsum > 0.0 ? acc / wsum : tex.sample(s, uv, level(lod)).rgb;
     }
 
     fragment float4 foldFragment(VOut in [[stage_in]],

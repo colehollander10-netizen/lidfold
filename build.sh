@@ -23,8 +23,9 @@ for a in "$@"; do case "$a" in
   --universal) ARCH=(--arch arm64 --arch x86_64);;
   *) echo "unknown: $a" >&2; exit 1;; esac; done
 
-swift build -c release --product Lidfold "${ARCH[@]}"
-BIN="$(swift build -c release --show-bin-path "${ARCH[@]}")/Lidfold"
+# ${ARCH[@]+...} keeps bash 3.2 happy with an empty array under set -u.
+swift build -c release --product Lidfold ${ARCH[@]+"${ARCH[@]}"}
+BIN="$(swift build -c release --show-bin-path ${ARCH[@]+"${ARCH[@]}"})/Lidfold"
 
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"

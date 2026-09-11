@@ -7,8 +7,9 @@ import CoreGraphics
 /// What the shader needs for one frame, derived from a lid angle and the
 /// user's sliders by `FoldModel`.
 struct FoldParams {
-    var tilt: Double = 0            // radians the picture has rotated away from the glass
-    var eyeDistance: Double = 3.0   // in screen heights
+    var tilt: Double = 0            // radians the glass has rotated about the hinge toward the viewer
+    var eyeDistance: Double = 2.8   // in screen heights
+    var eyeHeight: Double = 1.1     // in screen heights above the hinge
     var blurStrength: Double = 0    // 0...1
     var blurFloor: Double = 0.12    // share of the blur that reaches the hinge edge
     var maxBlurRadius: Double = 0.06 // fraction of content height, in texels at level 0
@@ -26,10 +27,9 @@ enum FoldModel {
         let travel = max(0, a0 - angle)
         let progress = min(max(travel / max(a0 - a1, 1), 0), 1)
         var f = FoldParams()
-        // Perspective: how much of the physical hinge rotation the picture follows.
-        let gain = 0.35 + 0.65 * Effect.perspective
-        f.tilt = min(travel * gain, 82) * .pi / 180
-        f.eyeDistance = 3.0
+        f.tilt = min(travel, 85) * .pi / 180
+        f.eyeDistance = Effect.eyeDistance
+        f.eyeHeight = Effect.eyeHeight
         f.blurStrength = Effect.blur * pow(progress, 1.35)
         f.dim = Effect.shadow * pow(progress, 0.9)
         f.cornerShadow = Effect.shadow * progress * 0.8
@@ -42,21 +42,40 @@ enum FoldModel {
         return t * t * (3 - 2 * t)
     }
 
-    /// Screen-uv (y down) to content-uv (y down) homography for a picture of
-    /// the given aspect, rotated `tilt` about its bottom edge and viewed from
-    /// `eyeDistance` screen heights in front of the screen centre.
-    static func screenToContent(aspect A: Double, tilt t: Double, eyeDistance D: Double) -> simd_double3x3 {
+    /// Glass-uv (y down) to desktop-uv (y down) homography.
+    ///
+    /// The desktop is a plane fixed in space where the open screen was. The
+    /// glass rotates about the hinge (bottom edge) toward a viewer sitting
+    /// `eyeDistance` heights in front of it, `eyeHeight` above the hinge. Each
+    /// glass point shows whatever the viewer's ray through it hits on the fixed
+    /// desktop, so from the viewer's seat the desktop appears to stay put while
+    /// the lid sweeps over it. Height above the hinge maps to more magnification
+    /// as the glass comes closer, so the picture stretches and its top leaves
+    /// through the top of the glass.
+    static func screenToContent(aspect A: Double, tilt t: Double, eyeDistance D: Double, eyeHeight ey: Double) -> simd_double3x3 {
+        guard Effect.anchored else { return recedingScreenToContent(aspect: A, tilt: t, eyeDistance: D) }
+        func hit(_ u: Double, _ v: Double) -> SIMD2<Double> {
+            // Glass point at height v sits at (u, v cos t, v sin t); the ray from
+            // the eye at (A/2, ey, D) meets the desktop plane z = 0 at scale s.
+            let s = D / max(D - v * sin(t), 0.05)
+            let x = A / 2 + (u - A / 2) * s
+            let y = ey + (v * cos(t) - ey) * s
+            return SIMD2(x / A, 1 - y)   // desktop uv, y down
+        }
+        // Glass uv corners (0,0) top-left, (1,0) top-right, (1,1) bottom-right, (0,1) bottom-left;
+        // glass height v is 1 at the top row and 0 at the hinge.
+        return squareToQuad([hit(0, 1), hit(A, 1), hit(A, 0), hit(0, 0)])
+    }
+
+    /// The other reading of the effect: the picture itself rotates away from
+    /// the viewer about the hinge and is projected onto the open screen, so
+    /// the whole desktop stays visible and its far edge recedes.
+    static func recedingScreenToContent(aspect A: Double, tilt t: Double, eyeDistance D: Double) -> simd_double3x3 {
         func project(_ u: Double, _ v: Double) -> SIMD2<Double> {
             let s = D / (D + v * sin(t))
-            let x = A / 2 + (u - A / 2) * s
-            let y = 0.5 + (v * cos(t) - 0.5) * s
-            return SIMD2(x / A, 1 - y)   // to unit screen uv, y down
+            return SIMD2((A / 2 + (u - A / 2) * s) / A, 1 - (0.5 + (v * cos(t) - 0.5) * s))
         }
-        // Content uv corners (y down): (0,0) top-left, (1,0) top-right, (1,1) bottom-right, (0,1) bottom-left.
-        // Content (u,v) with v up: top has v = 1.
-        let corners = [project(0, 1), project(A, 1), project(A, 0), project(0, 0)]
-        let contentToScreen = squareToQuad(corners)
-        return contentToScreen.inverse
+        return squareToQuad([project(0, 1), project(A, 1), project(A, 0), project(0, 0)]).inverse
     }
 
     /// Heckbert's unit-square to quadrilateral mapping. Corners are for
@@ -137,7 +156,7 @@ final class FoldRenderer {
 
     private func makeContentTexture(width: Int, height: Int) -> MTLTexture? {
         let d = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: Self.pixelFormat, width: width, height: height, mipmapped: true)
-        d.usage = [.shaderRead, .renderTarget]
+        d.usage = [.shaderRead, .shaderWrite, .renderTarget]
         d.storageMode = .private
         return device.makeTexture(descriptor: d)
     }
@@ -145,7 +164,7 @@ final class FoldRenderer {
     func uniforms(for params: FoldParams, outputWidth: Int, outputHeight: Int) -> Uniforms {
         var u = Uniforms()
         let aspect = Double(outputWidth) / Double(outputHeight)
-        let M = FoldModel.screenToContent(aspect: aspect, tilt: params.tilt, eyeDistance: params.eyeDistance)
+        let M = FoldModel.screenToContent(aspect: aspect, tilt: params.tilt, eyeDistance: params.eyeDistance, eyeHeight: params.eyeHeight)
         u.c0 = SIMD4<Float>(Float(M.columns.0.x), Float(M.columns.0.y), Float(M.columns.0.z), 0)
         u.c1 = SIMD4<Float>(Float(M.columns.1.x), Float(M.columns.1.y), Float(M.columns.1.z), 0)
         u.c2 = SIMD4<Float>(Float(M.columns.2.x), Float(M.columns.2.y), Float(M.columns.2.z), 0)
