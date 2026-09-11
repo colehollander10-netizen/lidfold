@@ -8,13 +8,22 @@
 #   ./build.sh --install    also copy to /Applications
 #   ./build.sh --run        also (re)launch it
 #
-# Ad-hoc signatures change on every build, so macOS may ask for Screen
-# Recording permission again after a rebuild. Set SIGN_IDENTITY to a real
-# Developer ID to keep the grant.
+# Signs with "Lidfold Local Signing" when that identity exists in the login
+# keychain (see scripts/make-signing-identity.sh), otherwise ad-hoc. Set
+# SIGN_IDENTITY to override.
 set -euo pipefail
 cd "$(dirname "$0")"
 
-SIGN_IDENTITY="${SIGN_IDENTITY:--}"
+# A stable identity keeps the Screen Recording grant across rebuilds. Ad-hoc
+# signing changes identity every build and forces a fresh grant each time.
+# scripts/make-signing-identity.sh creates the local one.
+if [[ -z "${SIGN_IDENTITY:-}" ]]; then
+  if security find-certificate -c "Lidfold Local Signing" >/dev/null 2>&1; then
+    SIGN_IDENTITY="Lidfold Local Signing"
+  else
+    SIGN_IDENTITY=-
+  fi
+fi
 APP="build/Lidfold.app"
 INSTALL=false; RUN=false; ZIP=false
 ARCH=()
@@ -51,7 +60,9 @@ if $INSTALL; then
   cp -R "$APP" /Applications/Lidfold.app
   # Ad-hoc signatures change per build, so the old Screen Recording grant no
   # longer matches. Clear it so the next grant attaches to this build.
-  tccutil reset ScreenCapture com.colehollander.lidfold >/dev/null 2>&1 || true
+  if [[ "$SIGN_IDENTITY" == - ]]; then
+    tccutil reset ScreenCapture com.colehollander.lidfold >/dev/null 2>&1 || true
+  fi
   TARGET=/Applications/Lidfold.app
   echo "installed $TARGET"
 fi

@@ -4,8 +4,9 @@ import Combine
 
 /// The fixed look of the effect. Tuned once; no sliders.
 enum Effect {
-    /// Below this lid angle the effect is visible.
-    static let activationAngle = 100.0
+    /// Below this lid angle the effect is visible. Typing angles sit around
+    /// 95° to 115°, so this leaves room for a nudge without starting anything.
+    static let activationAngle = 90.0
     /// At this lid angle the picture has fully dissolved into black.
     static let endAngle = 8.0
     /// false: the desktop recedes away from the viewer behind the hinge, the

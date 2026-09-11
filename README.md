@@ -25,17 +25,17 @@ Not affiliated with Apple. iPhone and MacBook are trademarks of Apple Inc.
    xattr -dr com.apple.quarantine /Applications/Lidfold.app
    ```
 
-3. Open it. A laptop icon appears in the menu bar and macOS asks for Screen Recording. Click **Open System Settings**, turn on **Lidfold** under **Privacy & Security → Screen & System Audio Recording**, and choose **Quit & Reopen** when offered.
-4. Click the menu bar icon. The first line should read **Waiting for the lid** and the icon should show your current lid angle. If it still says **Needs Screen Recording**, quit Lidfold from the same menu and open it again.
+3. Open it. A laptop icon appears in the menu bar and macOS asks for Screen Recording, once. Click **Open System Settings** and turn on **Lidfold** under **Privacy & Security → Screen & System Audio Recording**. Lidfold notices the grant and relaunches itself within a couple of seconds.
+4. Click the menu bar icon. The first line should read **Waiting for the lid** and the icon should show your current lid angle.
 
-Now close the lid slowly. The desktop starts to tilt as the lid passes 100° and is fully dark by about 8°. The menu has three items: **Follow the Lid** to turn the effect off and on, **Launch at Login**, and **Quit**.
+Now close the lid slowly. The desktop starts to tilt as the lid passes 90° and is fully dark by about 8°. The menu has three items: **Follow the Lid** to turn the effect off and on, **Launch at Login**, and **Quit**.
 
 ## Good to know
 
 - **With a monitor attached** the Mac stays awake when the lid shuts. The effect plays until the built-in display switches off, then ends, so nothing lands on the monitor.
 - **Opening the lid** plays the effect in reverse if you reopen before the Mac sleeps. Once it has slept, waking ends the effect so you never come back to a tilted desktop.
 - **A lid left half-closed** ends the effect after 20 seconds, so you can work at any angle.
-- **A nudge while typing won't trigger it.** The lid has to be closing at a deliberate pace when it crosses 100°.
+- **A nudge while typing won't trigger it.** The lid has to be closing at a deliberate pace when it crosses 90°.
 - **Nothing to tune.** The handful of numbers that define the look are in `Effect` at the top of `Sources/Lidfold/Preferences.swift` if you build from source. Set `anchored` to `true` there for the other reading of the effect, where the desktop stays fixed in space and the glass sweeps over it, stretching the picture.
 
 ## Build from source
@@ -48,7 +48,7 @@ cd lidfold
 ./build.sh --install --run
 ```
 
-`./build.sh --zip` writes a release zip; `--universal` adds an Intel slice. Each build is ad-hoc signed, so macOS treats it as a new app and asks for Screen Recording again. `--install` clears the stale grant for you.
+`./build.sh --zip` writes a release zip; `--universal` adds an Intel slice. Run `scripts/make-signing-identity.sh` once first: it creates a local signing identity so every build carries the same identity and macOS keeps the Screen Recording grant across rebuilds. Without it, builds are ad-hoc signed and each one needs a fresh grant.
 
 ## How it works
 

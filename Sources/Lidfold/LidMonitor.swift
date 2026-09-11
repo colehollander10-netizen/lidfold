@@ -72,6 +72,14 @@ final class LidMonitor: ObservableObject {
     private var observers: [(NotificationCenter, NSObjectProtocol)] = []
     private var activity: NSObjectProtocol?
     private let simulationStart = CACurrentMediaTime()
+    /// Cached Screen Recording state, refreshed every couple of seconds. The
+    /// state machine never touches capture without it, so macOS is never
+    /// asked twice.
+    private(set) var hasPermission = ScreenStreamer.hasPermission
+    private var lastPermissionCheck: CFTimeInterval = 0
+    /// After capture fails, nothing restarts until the lid has reopened above
+    /// the activation angle. Otherwise a resting lid retries every poll.
+    private var blockedUntilReopen = false
 
     init(preferences: Preferences) {
         self.preferences = preferences
@@ -86,8 +94,13 @@ final class LidMonitor: ObservableObject {
         overlay?.frameProvider = { [weak self] in self?.streamer?.takeNewFrame() }
         streamer?.onStateChange = { [weak self] state in
             guard let self else { return }
-            // A stream that dies mid-effect must take the overlay down with it.
-            if case .failed = state, self.phase != .idle { Log.write("capture failed, ending effect"); self.disarm() }
+            // A stream that dies mid-effect must take the overlay down with it,
+            // and nothing may retry until the lid has been reopened.
+            if case .failed = state, self.phase != .idle {
+                Log.write("capture failed, ending effect until the lid reopens")
+                self.blockedUntilReopen = true
+                self.disarm()
+            }
             self.refreshStatus()
         }
 
@@ -110,7 +123,7 @@ final class LidMonitor: ObservableObject {
     deinit { observers.forEach { $0.0.removeObserver($0.1) } }
 
     func start() {
-        Log.write("start: sensor=\(sensor.isAvailable) \(sensor.resolution?.label ?? "") permission=\(ScreenStreamer.hasPermission) builtIn=\(NSScreen.builtIn?.localizedName ?? "none") angle=\(readAngle() ?? -1)")
+        Log.write("start: sensor=\(sensor.isAvailable) \(sensor.resolution?.label ?? "") permission=\(hasPermission) builtIn=\(NSScreen.builtIn?.localizedName ?? "none") angle=\(readAngle() ?? -1)")
         if let a = readAngle() { rawAngle = a; currentAngle = a; spring.reset(to: a) }
         // A napped menu bar app would poll late and miss a fast close.
         activity = ProcessInfo.processInfo.beginActivity(options: [.userInitiated, .latencyCritical], reason: "Following the lid angle")
@@ -174,6 +187,17 @@ final class LidMonitor: ObservableObject {
 
         guard let overlay, phase != .preview else { return }
         guard preferences.isEnabled else { if phase != .idle { disarm() }; return }
+        if now - lastPermissionCheck > 2 {
+            lastPermissionCheck = now
+            let granted = ScreenStreamer.hasPermission
+            if granted != hasPermission { hasPermission = granted; Log.write("Screen Recording permission now \(granted)"); refreshStatus() }
+        }
+        guard hasPermission else { if phase != .idle { disarm() }; return }
+        if blockedUntilReopen {
+            guard a >= Effect.activationAngle + Self.hysteresis else { return }
+            Log.write("lid reopened, capture may start again")
+            blockedUntilReopen = false
+        }
         if phase != .idle {
             guard let screen = targetScreen else { Log.write("no built-in display, ending effect"); disarm(); return }
             if let onScreen = overlay.currentScreen, onScreen != screen { Log.write("overlay on \(onScreen.localizedName), ending effect"); disarm(); return }
@@ -188,8 +212,10 @@ final class LidMonitor: ObservableObject {
             let deliberate = velocity < Self.deliberateSpeed
             let crossed = (previous ?? a) >= act && a < act
             // A deliberate close that is already below the angle (it paused
-            // near 100°, or the app started with the lid part-way) still counts.
-            let closingBelow = a < act && a > Effect.endAngle + 10 && deliberate
+            // near the angle, or the app started with the lid part-way) still
+            // counts, but only on a sample where the lid actually moved down.
+            let movingDown = previous.map { a < $0 } ?? false
+            let closingBelow = movingDown && a < act && a > Effect.endAngle + 10 && deliberate
             if (crossed && deliberate) || closingBelow { arm(now); activate(); return }
             if a >= act, a < act + Self.armMargin, velocity < Self.closingSpeed { arm(now) }
         case .armed:
@@ -308,7 +334,7 @@ final class LidMonitor: ObservableObject {
         else if !isSensorAvailable, phase != .preview { text = "Lid sensor not found" }
         else if !preferences.isEnabled, phase != .preview { text = "Off" }
         else if case .failed(let why)? = streamer?.state { text = why }
-        else if !ScreenStreamer.hasPermission { text = "Needs Screen Recording: grant it, then quit and reopen" }
+        else if !hasPermission { text = "Needs Screen Recording: grant it in System Settings" }
         else {
             switch phase {
             case .idle: text = "Waiting for the lid"
