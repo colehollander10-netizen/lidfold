@@ -18,15 +18,19 @@ Not affiliated with Apple. iPhone and MacBook are trademarks of Apple Inc.
 
 ## Install
 
-1. Download `Lidfold-<version>.zip` from [Releases](../../releases), unzip it, and drag **Lidfold.app** into **Applications**.
-2. The app is signed but not notarized, so the first open needs one extra step. Either right-click **Lidfold.app** and choose **Open**, or run:
+One line in Terminal. It downloads the latest release into Applications and opens it:
 
-   ```sh
-   xattr -dr com.apple.quarantine /Applications/Lidfold.app
-   ```
+```sh
+curl -fsSL https://raw.githubusercontent.com/colehollander10-netizen/lidfold/main/install.sh | bash
+```
 
-3. Open it. A laptop icon appears in the menu bar and macOS asks for Screen Recording, once. Click **Open System Settings** and turn on **Lidfold** under **Privacy & Security → Screen & System Audio Recording**. Lidfold notices the grant and relaunches itself within a couple of seconds.
-4. Click the menu bar icon. The first line should read **Waiting for the lid** and the icon should show your current lid angle.
+A laptop icon appears in the menu bar and macOS asks for Screen Recording, once. Click **Open System Settings** and turn on **Lidfold** under **Privacy & Security → Screen & System Audio Recording**. Lidfold notices the grant and relaunches itself within a couple of seconds. Click the menu bar icon: the first line should read **Waiting for the lid** and the icon should show your current lid angle.
+
+<details><summary>Installing by hand instead</summary>
+
+Download `Lidfold-<version>.zip` from [Releases](../../releases), unzip it, and drag **Lidfold.app** into **Applications**. The app is not notarized, so the first open needs a right-click on **Lidfold.app** and **Open**. The installer above does the equivalent for you.
+
+</details>
 
 Now close the lid slowly. The desktop starts to tilt as the lid passes 90° and is fully dark by about 8°. The menu has three items: **Follow the Lid** to turn the effect off and on, **Launch at Login**, and **Quit**.
 
@@ -48,7 +52,7 @@ cd lidfold
 ./build.sh --install --run
 ```
 
-`./build.sh --zip` writes a release zip; `--universal` adds an Intel slice. Run `scripts/make-signing-identity.sh` once first: it creates a local signing identity so every build carries the same identity and macOS keeps the Screen Recording grant across rebuilds. Without it, builds are ad-hoc signed and each one needs a fresh grant.
+`./build.sh --zip` writes a release zip; `--universal` adds an Intel slice. The first build creates a local signing identity in your login keychain so every build carries the same identity and macOS keeps the Screen Recording grant across rebuilds.
 
 ## How it works
 

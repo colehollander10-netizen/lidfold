@@ -8,9 +8,9 @@
 #   ./build.sh --install    also copy to /Applications
 #   ./build.sh --run        also (re)launch it
 #
-# Signs with "Lidfold Local Signing" when that identity exists in the login
-# keychain (see scripts/make-signing-identity.sh), otherwise ad-hoc. Set
-# SIGN_IDENTITY to override.
+# Signs with a local "Lidfold Local Signing" identity, created on first run,
+# so every build carries the same identity and macOS keeps the Screen
+# Recording grant across rebuilds. Set SIGN_IDENTITY to use your own.
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -18,11 +18,8 @@ cd "$(dirname "$0")"
 # signing changes identity every build and forces a fresh grant each time.
 # scripts/make-signing-identity.sh creates the local one.
 if [[ -z "${SIGN_IDENTITY:-}" ]]; then
-  if security find-certificate -c "Lidfold Local Signing" >/dev/null 2>&1; then
-    SIGN_IDENTITY="Lidfold Local Signing"
-  else
-    SIGN_IDENTITY=-
-  fi
+  security find-certificate -c "Lidfold Local Signing" >/dev/null 2>&1 || "$(dirname "$0")/scripts/make-signing-identity.sh"
+  SIGN_IDENTITY="Lidfold Local Signing"
 fi
 APP="build/Lidfold.app"
 INSTALL=false; RUN=false; ZIP=false
